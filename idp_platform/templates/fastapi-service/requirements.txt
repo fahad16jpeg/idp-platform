@@ -1,0 +1,5 @@
+fastapi>=0.115,<1
+uvicorn[standard]>=0.30,<1
+pydantic-settings>=2.5,<3
+prometheus-client>=0.20,<1
+azure-monitor-opentelemetry>=1.6,<2

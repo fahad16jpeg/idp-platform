@@ -1,0 +1,7 @@
+# Copy to backend.hcl (git-ignored), fill in the storage account printed by
+# scripts/bootstrap-azure.sh, then run: terraform init -backend-config=backend.hcl
+resource_group_name  = "rg-__PROJECT_NAME__-tfstate"
+storage_account_name = "<storage account from the bootstrap script>"
+container_name       = "tfstate"
+key                  = "__PROJECT_NAME__-dev.tfstate"
+use_azuread_auth     = true

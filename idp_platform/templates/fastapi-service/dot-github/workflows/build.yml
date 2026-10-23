@@ -1,0 +1,76 @@
+name: build
+
+on:
+  workflow_call:
+    outputs:
+      image:
+        description: Fully qualified reference of the pushed image
+        value: ${{ jobs.build.outputs.image }}
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  PROJECT_NAME: __PROJECT_NAME__
+  ENVIRONMENT: dev
+  ARM_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID }}
+  ARM_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
+  ARM_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+  ARM_USE_OIDC: "true"
+  TFSTATE_RESOURCE_GROUP: ${{ vars.TFSTATE_RESOURCE_GROUP }}
+  TFSTATE_STORAGE_ACCOUNT: ${{ vars.TFSTATE_STORAGE_ACCOUNT }}
+  TFSTATE_KEY: __PROJECT_NAME__-dev.tfstate
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    outputs:
+      image: ${{ steps.push.outputs.image }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build image
+        run: |
+          docker build \
+            --build-arg GIT_SHA="${GITHUB_SHA}" \
+            --tag "${PROJECT_NAME}:${GITHUB_SHA}" .
+
+      # Scan before pushing, so a vulnerable image never reaches the registry.
+      - name: Scan image for vulnerabilities
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: ${{ env.PROJECT_NAME }}:${{ github.sha }}
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+          exit-code: "1"
+
+      - name: Azure login and Terraform init
+        uses: ./.github/actions/terraform-setup
+
+      # The registry is part of the Terraform config, but the image must be pushed
+      # before the Container App can use it. On the very first run only, create
+      # just the registry; every later run finds it in state and skips this.
+      - name: Ensure container registry exists
+        working-directory: terraform
+        run: |
+          resources="$(terraform state list)"
+          if ! grep -qx 'azurerm_container_registry.this' <<<"$resources"; then
+            echo "First deployment: creating the container registry"
+            terraform apply -input=false -auto-approve \
+              -target=azurerm_container_registry.this \
+              -var="container_image=bootstrap"
+          fi
+          acr_name="$(az acr list \
+            --resource-group "rg-${PROJECT_NAME}-${ENVIRONMENT}" \
+            --query "[0].name" --output tsv)"
+          echo "ACR_NAME=${acr_name}" >> "$GITHUB_ENV"
+
+      - name: Push image to Azure Container Registry
+        id: push
+        run: |
+          az acr login --name "$ACR_NAME"
+          image="${ACR_NAME}.azurecr.io/${PROJECT_NAME}:${GITHUB_SHA}"
+          docker tag "${PROJECT_NAME}:${GITHUB_SHA}" "$image"
+          docker push "$image"
+          echo "image=${image}" >> "$GITHUB_OUTPUT"

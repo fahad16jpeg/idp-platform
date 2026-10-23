@@ -1,0 +1,5 @@
+# Keep LF line endings in the repo, even when committing from Windows:
+# shell scripts and Dockerfiles break with CRLF inside Linux containers and CI.
+* text=auto eol=lf
+*.png binary
+*.jpg binary

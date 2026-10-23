@@ -1,0 +1,27 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Local configuration and secrets
+.env
+
+# Terraform (commit .terraform.lock.hcl, never state or plans)
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfplan
+tfplan
+crash.log
+terraform/terraform.tfvars
+terraform/backend.hcl
+
+# OS / editors
+.DS_Store
+Thumbs.db
+.idea/

@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "idp-platform"
+version = "0.2.0"
+description = "Internal Developer Platform CLI: scaffold FastAPI services with Docker, Terraform (Azure) and GitHub Actions"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = []
+
+[project.scripts]
+platform = "idp_platform.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["idp_platform*"]
+
+[tool.setuptools.package-data]
+idp_platform = ["templates/**/*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

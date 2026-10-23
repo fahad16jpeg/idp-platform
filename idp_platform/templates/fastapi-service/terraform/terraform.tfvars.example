@@ -1,0 +1,5 @@
+# Copy to terraform.tfvars (git-ignored) for local plans.
+environment     = "dev"
+location        = "__AZURE_REGION__"
+alert_email     = "you@example.com"
+container_image = "<acr-name>.azurecr.io/__PROJECT_NAME__:<git-sha>"

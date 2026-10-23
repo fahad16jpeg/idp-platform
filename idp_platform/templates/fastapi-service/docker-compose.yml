@@ -1,0 +1,21 @@
+services:
+  api:
+    build:
+      context: .
+      args:
+        GIT_SHA: local
+    image: __PROJECT_NAME__:local
+    ports:
+      - "8000:8000"
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      APP_ENVIRONMENT: development
+      APP_LOG_LEVEL: DEBUG
+      APP_LOG_FORMAT: text
+      # File-change events don't cross the Windows/WSL boundary; polling makes --reload work.
+      WATCHFILES_FORCE_POLLING: "true"
+    volumes:
+      - ./app:/app/app:ro
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]

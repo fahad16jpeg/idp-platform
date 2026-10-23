@@ -1,0 +1,6 @@
+# Allow-list: only what the image needs is sent to the Docker build context.
+*
+!app/
+!requirements.txt
+**/__pycache__
+**/*.py[cod]

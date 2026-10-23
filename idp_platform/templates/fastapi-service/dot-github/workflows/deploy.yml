@@ -1,0 +1,95 @@
+name: deploy
+
+on:
+  workflow_call:
+    inputs:
+      image:
+        required: true
+        type: string
+  # Manual runs redeploy any earlier image, e.g. to roll back.
+  workflow_dispatch:
+    inputs:
+      image:
+        description: Full image reference, e.g. acrxyz.azurecr.io/__PROJECT_NAME__:<git-sha>
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  PROJECT_NAME: __PROJECT_NAME__
+  ENVIRONMENT: dev
+  ARM_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID }}
+  ARM_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
+  ARM_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+  ARM_USE_OIDC: "true"
+  TFSTATE_RESOURCE_GROUP: ${{ vars.TFSTATE_RESOURCE_GROUP }}
+  TFSTATE_STORAGE_ACCOUNT: ${{ vars.TFSTATE_STORAGE_ACCOUNT }}
+  TFSTATE_KEY: __PROJECT_NAME__-dev.tfstate
+  TF_VAR_alert_email: ${{ vars.ALERT_EMAIL }}
+  IMAGE: ${{ inputs.image }}
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: dev
+      url: ${{ steps.outputs.outputs.url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Azure login and Terraform init
+        uses: ./.github/actions/terraform-setup
+
+      - name: Terraform plan
+        working-directory: terraform
+        run: terraform plan -input=false -var="container_image=${IMAGE}" -out=tfplan
+
+      - name: Terraform apply
+        working-directory: terraform
+        run: terraform apply -input=false tfplan
+
+      - name: Read outputs
+        id: outputs
+        working-directory: terraform
+        run: echo "url=$(terraform output -raw container_app_url)" >> "$GITHUB_OUTPUT"
+
+      # Passes only when the new revision is ready AND reports the expected commit,
+      # so "deployed" really means the new code is serving traffic.
+      - name: Verify deployment
+        env:
+          URL: ${{ steps.outputs.outputs.url }}
+        run: |
+          expected="${IMAGE##*:}"
+          for attempt in $(seq 1 20); do
+            if curl -fsS --max-time 5 "${URL}/ready" > /dev/null \
+              && info="$(curl -fsS --max-time 5 "${URL}/info")"; then
+              commit="$(jq -r .commit <<<"$info")"
+              if [ "$commit" = "$expected" ]; then
+                echo "Healthy: ${expected} is live at ${URL}"
+                exit 0
+              fi
+              echo "Attempt ${attempt}: still serving ${commit}, waiting for ${expected}"
+            else
+              echo "Attempt ${attempt}: not ready yet"
+            fi
+            sleep 15
+          done
+          echo "::error::${expected} did not become healthy at ${URL} within 5 minutes"
+          exit 1
+
+      - name: Notify on failure
+        if: failure()
+        env:
+          WEBHOOK_URL: ${{ secrets.ALERT_WEBHOOK_URL }}
+        run: |
+          run_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          message="Deployment of ${PROJECT_NAME} (${IMAGE##*:}) failed: ${run_url}"
+          echo "::error::${message}"
+          if [ -n "${WEBHOOK_URL}" ]; then
+            payload="$(jq -n --arg text "$message" '{text: $text}')"
+            curl -fsS -X POST -H 'Content-Type: application/json' \
+              --data "$payload" "$WEBHOOK_URL"
+          fi
